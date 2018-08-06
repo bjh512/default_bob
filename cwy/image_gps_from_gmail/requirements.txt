@@ -1,0 +1,5 @@
+gmail
+requests
+PIL
+datetime
+urllib
