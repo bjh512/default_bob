@@ -1,3 +1,4 @@
+#-*- coding: utf-8 -*-
 from gmail import Gmail
 import base64
 import requests
@@ -7,7 +8,11 @@ import os
 from datetime import datetime
 from PIL import Image
 from PIL.ExifTags import TAGS
+import pandas as pd
+import hashlib
 
+reload(sys)
+sys.setdefaultencoding('utf-8')
 exten_list = ["jpg", "jpeg", "tif", "tiff"]
 
 def connect_mail():
@@ -38,13 +43,13 @@ def make_url_dict(mails):
 
 	for amail in mails:
 		amail.fetch()
-		body = amail.body
+		body = (amail.body, amail.sent_at)
 		mail_bodies.append(body)
 
-	for body in mail_bodies:
+	for body,time in mail_bodies:
 		print("-----------From this mail------------")
 		print(body)
-		print("-----------From this mail------------")
+		print("---------------Result----------------")
 
 		#make a index list of slahses
 		list_slashes = list()
@@ -53,7 +58,6 @@ def make_url_dict(mails):
 				list_slashes.append(i)
 		for j in list_slashes:
 			if j-1 not in list_slashes and j+1 not in list_slashes:
-
 				#from "(4)/(1)" to "(9)/(9)"
 				offset = 1
 				for ind_left in range(offset+3,10):
@@ -70,23 +74,30 @@ def make_url_dict(mails):
 								if code_http_resp == 200:
 									for exten in exten_list:
 										if exten in url_:
-											image_urls_dic[url_] = url
+											if url.endswith("\r\n"):
+												url=url.strip("\r\n")
+											elif url.endswith("\r"):
+												url=url.strip("\r")
+											image_urls_dic[url_] = [url,time]
 											print("Image url uploaded")	
+
 						except Exception as e:
 							'''
 							print("Failed to connect the url")
 							print(e)
 							'''
 							pass
-		
+
 	return image_urls_dic
 
 
 def save_image(dirName, image_urls_dic):
 	try:
 		os.mkdir(dirName)
+		print(dirName+" dir is created")
 	except Exception as e:
-		if str(e)=="FileExistsError":
+		if str(e)=="[Errno 17] File exists: '"+dirName+"'":
+			print(dirName+" dir is already existed")
 			pass
 	filenames = []
 	for url in image_urls_dic.keys():
@@ -105,8 +116,8 @@ def mark_in_map(dirName, filenames):
 	with open('on_the_map.kml', "w+") as f:
 	    f.write(kmlheader)
 
+	fileinfo_list = []
 	for filename in filenames:
-		extension = filename.split('.')[-1]
 		try:
 			img = Image.open("./"+dirName+"/"+filename)
 			info = img._getexif()
@@ -131,18 +142,59 @@ def mark_in_map(dirName, filenames):
 			Lon = (lonDeg + (lonMin + lonSec / 60.0) / 60.0)
 			if exifGPS[3] == 'W': Lon = Lon * -1
 			# print file
-			msg = "There is GPS info in this picture located at " + str(Lat) + "," + str(Lon)
-			print(msg)
+			#msg = "There is GPS info in this picture located at " + str(Lat) + "," + str(Lon)
+			#print(msg)
 			kml = '<Placemark><name>%s</name><Point><coordinates>%6f,%6f</coordinates></Point></Placemark>' % (
 			filename, Lon, Lat)
 			with open('on_the_map.kml', "a") as f:
 			    f.write(kml)
-			print 'kml file created'
+			print("kml file created")
+			print(filename)
+			fileinfo_list.append([filename,Lat,Lon])
 		except:
-			print 'There is no GPS info in this picture'
+			print("There is no GPS info in this picture")
+			fileinfo_list.append([filename,None,None])
 			pass
 	with open('on_the_map.kml',"a") as f:
 		f.write("</kml>")
+
+	return fileinfo_list
+
+
+def file_hash(dirName, filename):
+	hasherM = hashlib.md5()
+	hahserS1 = hashlib.sha1()
+	with open('./'+dirName+'/'+filename,'rb') as afile:
+		buf = afile.read()
+		hasherM.update(buf)
+		hahserS1.update(buf)
+		(hasherM.hexdigest())
+	return (hasherM.hexdigest(),hahserS1.hexdigest())
+
+def make_csv(dirName, image_urls_dic, fileinfo_list):
+	#combine 2 data sets
+	for key in image_urls_dic.keys():
+		for index,info in enumerate(fileinfo_list):
+			#print(key.split('/')[-1], info[0])
+			if unquote(key.split('/')[-1])==info[0]:
+				fileinfo_list[index].append(key)
+				fileinfo_list[index].append(image_urls_dic[key][0])
+				fileinfo_list[index].append(image_urls_dic[key][1])
+				md5,sha1 = file_hash(dirName, info[0])
+				fileinfo_list[index].append(md5)
+				fileinfo_list[index].append(sha1)
+
+	#rearrange the array
+	fileinfo_order = [5,4,3,0,1,2,6,7]
+	for index in range(len(fileinfo_list)):
+		fileinfo_list[index] = [fileinfo_list[index][i] for i in fileinfo_order]
+
+	csv_header = ["Date","Shortened URL","Full URL","FileName","Latitude","Longitude","MD5","SHA1"]
+	df = pd.DataFrame(data=fileinfo_list,columns=csv_header)
+	df.to_csv("./"+dirName+"/result.csv")
+
+	return fileinfo_list
+
 
 def disconnect_mail(g):
 	#logout
@@ -152,28 +204,36 @@ def disconnect_mail(g):
 
 
 if __name__ == '__main__':
+
+	dirName = datetime.today().strftime("%Y-%m-%d")
+
 	#connect to my gmail account
 	g = connect_mail()
 	if g.logged_in == True:
 		print("Succesfully logged in\n")
 	
+	#load directories' name for getting mails after last day
 	direc_list = [name for name in os.listdir(".") if os.path.isdir(name)]
 	direc_list.sort()
+
+	if dirName in direc_list:
+		direc_list.pop(direc_list.index(dirName))
+
 	if len(direc_list) == 0:
 		mails = g.inbox().mail(sender="fl0ckfl0ck@hotmail.com")
 	elif len(direc_list) >= 1:
-		mails = g.inbox().mail(sender="fl0ckfl0ck@hotmail.com", after=datetime((int)(direc_list[-1][:4]),(int)(direc_list[-1][4:6]),(int)(direc_list[-1][6:])))
+		last_date = datetime((int)(direc_list[-1][:4]),(int)(direc_list[-1][5:7]),(int)(direc_list[-1][8:]))
+		mails = g.inbox().mail(sender="fl0ckfl0ck@hotmail.com", after=last_date)
 
 	#extract urls
 	image_urls_dic = make_url_dict(mails)
-
-	print('\n'.join(image_urls_dic.keys()))
-	print('\n')
 	
 	#save images in a folder
-	dirName = datetime.today().strftime("%Y-%m-%d")
 	filenames = save_image(dirName, image_urls_dic)
+	fileinfo_list=mark_in_map(dirName, filenames)
 
-	mark_in_map(dirName, filenames)
+	#create csv file in each date folder by using 2 data sets
+	fileinfo_list=make_csv(dirName, image_urls_dic,fileinfo_list)
+	print(fileinfo_list)
 	
 	disconnect_mail(g)
