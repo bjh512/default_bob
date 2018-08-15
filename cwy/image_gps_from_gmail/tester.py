@@ -13,8 +13,8 @@ dirName="2018-08-08"
 #filenames = save_image(dirName, image_urls_dic)
 
 #fileinfo_list = mark_in_map(dirName, filenames)
-fileinfo_list = [['jul.jpg', 36.66294097222222, 126.62258911111111], ['\xe1\x84\x88\xe1\x85\xa9\xe1\x84\x88\xe1\x85\xb5.jpg', None, None], ['\xe7\xa7\x81\xe3\x81\xaf\xe4\xba\xba\xe9\x96\x93\xe3\x81\xae\xe5\xb1\x91\xe3\x81\xa6\xe3\x82\x99\xe3\x81\x99.jpg', None, None], ['ga.jpg', 37.527790083333336, 126.90460966666667], ['\xeb\xa7\x9b\xec\x9e\x88\xec\x96\xb4.jpg', 37.51306152777778, 127.05864716666666], ['11.jpg', None, None], ['druwa.jpg', 37.49848938888889, 127.01871491666667]]
+fileinfo_list = [['jul.jpg', 36.66294097222222, 126.62258911111111], ['뽀삐.jpg', None, None], ['私は人間の屑です.jpg', None, None], ['ga.jpg', 37.527790083333336, 126.90460966666667], ['맛있어.jpg', 37.51306152777778, 127.05864716666666], ['11.jpg', None, None], ['druwa.jpg', 37.49848938888889, 127.01871491666667]]
 
 fileinfo_list = make_csv(dirName,image_urls_dic,fileinfo_list)
-print(fileinfo_list)
+#print(fileinfo_list)
 #make_csv(dirName,filenames)
