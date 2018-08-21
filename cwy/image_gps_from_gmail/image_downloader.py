@@ -8,8 +8,11 @@ import os
 from datetime import datetime
 from PIL import Image
 from PIL.ExifTags import TAGS
-import pandas as pd
+import csv
+import unicodedata
 import hashlib
+from cStringIO import StringIO
+import sqlite3
 
 reload(sys)
 sys.setdefaultencoding('utf-8')
@@ -82,10 +85,6 @@ def make_url_dict(mails):
 											print("Image url uploaded")	
 
 						except Exception as e:
-							'''
-							print("Failed to connect the url")
-							print(e)
-							'''
 							pass
 
 	return image_urls_dic
@@ -102,7 +101,9 @@ def save_image(dirName, image_urls_dic):
 	filenames = []
 	for url in image_urls_dic.keys():
 		filename = url.split('/')[-1]
-		filename = unquote(filename)
+		filename = unquote(filename).decode('utf-8')
+		filename = unicodedata.normalize('NFC',filename)
+
 		r = requests.get(url, allow_redirects=True)
 		open("./"+dirName+"/"+filename, 'wb').write(r.content)
 		print(filename)
@@ -113,8 +114,21 @@ def save_image(dirName, image_urls_dic):
 
 def mark_in_map(dirName, filenames):
 	kmlheader = '<?xml version="1.0" encoding="UTF-8"?>' + '<kml xmlns="http://www.opengis.net/kml/2.2">'
-	with open('on_the_map.kml', "w+") as f:
-	    f.write(kmlheader)
+
+	files_in_current = os.listdir("./")
+
+	if 'on_the_map.kml' not in files_in_current:
+		with open('on_the_map.kml', "w+") as f:
+			f.write(kmlheader)
+	else:
+		#delete "</kml>" in legacy file
+		with open("on_the_map.kml","r+") as f:
+			new_f = f.readlines()
+			f.seek(0)
+			for line in new_f:
+				if "</kml>" not in line:
+					f.write(line)
+			f.truncate()
 
 	fileinfo_list = []
 	for filename in filenames:
@@ -144,7 +158,7 @@ def mark_in_map(dirName, filenames):
 			# print file
 			#msg = "There is GPS info in this picture located at " + str(Lat) + "," + str(Lon)
 			#print(msg)
-			kml = '<Placemark><name>%s</name><Point><coordinates>%6f,%6f</coordinates></Point></Placemark>' % (
+			kml = '<Placemark><name>%s</name><Point><coordinates>%6f,%6f</coordinates></Point></Placemark>\n' % (
 			filename, Lon, Lat)
 			with open('on_the_map.kml', "a") as f:
 			    f.write(kml)
@@ -156,7 +170,7 @@ def mark_in_map(dirName, filenames):
 			fileinfo_list.append([filename,None,None])
 			pass
 	with open('on_the_map.kml',"a") as f:
-		f.write("</kml>")
+		f.write("\n</kml>")
 
 	return fileinfo_list
 
@@ -174,9 +188,11 @@ def file_hash(dirName, filename):
 def make_csv(dirName, image_urls_dic, fileinfo_list):
 	#combine 2 data sets
 	for key in image_urls_dic.keys():
+		print(key.split('/')[-1])
+		key_in_form = unquote(key.split('/')[-1]).decode('utf-8')
+		key_in_form = unicodedata.normalize('NFC',key_in_form)
 		for index,info in enumerate(fileinfo_list):
-			#print(key.split('/')[-1], info[0])
-			if unquote(key.split('/')[-1])==info[0]:
+			if key_in_form==info[0]:
 				fileinfo_list[index].append(key)
 				fileinfo_list[index].append(image_urls_dic[key][0])
 				fileinfo_list[index].append(image_urls_dic[key][1])
@@ -185,13 +201,33 @@ def make_csv(dirName, image_urls_dic, fileinfo_list):
 				fileinfo_list[index].append(sha1)
 
 	#rearrange the array
-	fileinfo_order = [5,4,3,0,1,2,6,7]
+	fileinfo_order = [5, 4, 3, 0, 1, 2, 6, 7]
 	for index in range(len(fileinfo_list)):
+		print(fileinfo_list[index])
 		fileinfo_list[index] = [fileinfo_list[index][i] for i in fileinfo_order]
 
-	csv_header = ["Date","Shortened URL","Full URL","FileName","Latitude","Longitude","MD5","SHA1"]
-	df = pd.DataFrame(data=fileinfo_list,columns=csv_header)
-	df.to_csv("./"+dirName+"/result.csv")
+	#write on csv and sqlite3
+	csv_header = ["Date", "Shortened URL", "Full URL", "FileName", "Latitude", "Longitude", "MD5", "SHA1"]
+	with open("./"+dirName+"/result.csv", 'wb') as file:
+		files_in_current = os.listdir("./")
+		if 'imageDB.db' not in files_in_current:
+			con = sqlite3.connect(".\\imageDB.db")
+			cursor = con.cursor()
+			cursor.execute("CREATE TABLE images(Date text, ShortendURL text, FullURL text, FileName text, Latitude real, Longitude real, MD5 text, SHA1 text)")
+		else:
+			con = sqlite3.connect(".\\imageDB.db")
+			cursor = con.cursor()
+
+		writer = csv.writer(file, quoting=csv.QUOTE_ALL)
+		writer.writerow(csv_header)
+
+		for fileinfo in fileinfo_list:
+			print(fileinfo)
+			writer.writerow(fileinfo)
+			cursor.execute("INSERT OR REPLACE into images values(?,?,?,?,?,?,?,?)", fileinfo)
+
+		con.commit()
+		con.close()
 
 	return fileinfo_list
 
@@ -200,7 +236,7 @@ def disconnect_mail(g):
 	#logout
 	g.logout()
 	if g.logged_in == False:
-		"Succesfully logged out"
+		print("Succesfully logged out")
 
 
 if __name__ == '__main__':
