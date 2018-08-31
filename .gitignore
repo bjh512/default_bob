@@ -11,5 +11,5 @@ account.txt
 cwy/image_gps_from_gmail/2018-08-08
 cwy/image_gps_from_gmail/dist/2018-08-15
 *.pdf
-cwy/cert_parser/certs
-cwy/cert_parser/zip_folder
+./cwy/cert_parser/certs
+./cwy/cert_parser/zip_folder
